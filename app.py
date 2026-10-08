@@ -11,7 +11,23 @@ from datetime import datetime
 from flask import Flask, jsonify, request, send_from_directory, render_template_string
 import database
 
-app = Flask(__name__, static_folder="static", template_folder="templates")
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+
+def resolve_dir(name):
+    for path in [
+        os.path.join(BASE_DIR, name),
+        os.path.join(os.getcwd(), name),
+        os.path.join(BASE_DIR, "bob-digital-banking", name),
+        os.path.join(os.getcwd(), "bob-digital-banking", name)
+    ]:
+        if os.path.isdir(path):
+            return path
+    return os.path.join(BASE_DIR, name)
+
+TEMPLATES_DIR = resolve_dir("templates")
+STATIC_DIR = resolve_dir("static")
+
+app = Flask(__name__, static_folder=STATIC_DIR, template_folder=TEMPLATES_DIR)
 app.config["SECRET_KEY"] = "bob-digital-banking-supersecret-key-2026"
 
 # Current active session simulation (in-memory for demo / pair-programming)
@@ -602,8 +618,48 @@ def reset_db():
 
 # ----------------- FRONTEND UI ROUTE -----------------
 @app.route("/")
+@app.route("/index.html")
 def index():
-    return send_from_directory("templates", "index.html")
+    # 1. Try render_template
+    try:
+        from flask import render_template
+        return render_template("index.html")
+    except Exception:
+        pass
+
+    # 2. Try send_from_directory with absolute TEMPLATES_DIR
+    try:
+        return send_from_directory(TEMPLATES_DIR, "index.html")
+    except Exception:
+        pass
+
+    # 3. Direct multi-location file read fallback
+    for p in [
+        os.path.join(TEMPLATES_DIR, "index.html"),
+        os.path.join(BASE_DIR, "templates", "index.html"),
+        os.path.join(os.getcwd(), "templates", "index.html"),
+        os.path.join(BASE_DIR, "bob-digital-banking", "templates", "index.html"),
+        os.path.join(os.getcwd(), "bob-digital-banking", "templates", "index.html")
+    ]:
+        if os.path.isfile(p):
+            with open(p, "r", encoding="utf-8") as f:
+                return f.read(), 200, {"Content-Type": "text/html; charset=utf-8"}
+
+    return f"Template index.html not found. CWD: {os.getcwd()}, BASE_DIR: {BASE_DIR}", 404
+
+@app.route("/static/<path:filename>")
+def serve_static(filename):
+    for d in [
+        STATIC_DIR,
+        os.path.join(BASE_DIR, "static"),
+        os.path.join(os.getcwd(), "static"),
+        os.path.join(BASE_DIR, "bob-digital-banking", "static"),
+        os.path.join(os.getcwd(), "bob-digital-banking", "static")
+    ]:
+        target = os.path.join(d, filename)
+        if os.path.isfile(target):
+            return send_from_directory(d, filename)
+    return "Static file not found", 404
 
 if __name__ == "__main__":
     port = int(os.environ.get("PORT", 5000))
